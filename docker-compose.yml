@@ -1,0 +1,259 @@
+version: '3.8'
+
+# ═══════════════════════════════════════════════════════════
+#  OpenClaw Pentester — Stack Multi-Agente Completo
+#
+#  Agentes:
+#    supervisor  → Orquestador (puerto 3001)  skills: memory + HITL
+#    explorer    → Reconocimiento (puerto 3002) skills: spider + fingerprint + JS secrets
+#    analyst     → Tráfico ZAP (puerto 3003)   skills: proxy history + scanner
+#    exploiter   → Explotación (puerto 3004)   skills: fuzz + auth bypass + OOB
+#
+#  Servicios de apoyo:
+#    zap         → OWASP ZAP proxy/scanner (puerto 8080 / proxy 8090)
+#    interactsh  → Servidor OOB para payloads (puerto 8443) [comentado hasta Fase 4]
+#
+#  Memoria compartida: ChromaDB en volumen openclaw-state
+#  Todos los agentes comparten el mismo volumen → misma BD vectorial
+#
+#  Para desarrollo: usa pentester/docker/docker-compose.yml (solo ZAP)
+#  Variables: copia .env.example → .env
+# ═══════════════════════════════════════════════════════════
+
+# ── Plantilla base reutilizable ─────────────────────────────
+x-agent-base: &agent-base
+  build:
+    context: .
+    dockerfile: Dockerfile
+  environment:
+    - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+    - ZAP_BASE_URL=http://zap:8080
+    - ZAP_API_KEY=${ZAP_API_KEY:-changeme}
+    - INTERACTSH_SERVER=${INTERACTSH_SERVER:-https://interact.sh}
+    - INTERACTSH_TOKEN=${INTERACTSH_TOKEN:-}
+    - PENTEST_DB_PATH=/data/pentest/findings.db
+    - HOOKS_TOKEN=${HOOKS_TOKEN:-hooks-secret}
+    - REPORTS_DIR=/app/reports
+  volumes:
+    - ./pentester/skills:/app/pentester/skills
+    - ./pentester/agents:/app/pentester/agents
+    - pentest-db:/data/pentest
+    - ./reports:/app/reports
+  networks:
+    - pentester-net
+  depends_on:
+    zap:
+      condition: service_started
+  restart: unless-stopped
+
+services:
+
+  # ── Agente Supervisor (Orquestador) ──────────────────────
+  # Arranca primero. Los demás esperan a que esté healthy.
+  supervisor:
+    <<: *agent-base
+    container_name: agent-supervisor
+    ports:
+      - "3001:3001"
+    volumes:
+      - openclaw-state:/root/.openclaw
+      - ./pentester/agents/supervisor:/root/.openclaw/workspace
+      - ./pentester/skills:/app/pentester/skills
+      - ./pentester/agents:/app/pentester/agents
+      - ./pentester/config/supervisor.json:/root/.openclaw/openclaw.json
+      - pentest-db:/data/pentest
+      - ./reports:/app/reports
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN:-pentester}
+      - ZAP_BASE_URL=http://zap:8080
+      - ZAP_API_KEY=${ZAP_API_KEY:-changeme}
+      - INTERACTSH_SERVER=${INTERACTSH_SERVER:-https://interact.sh}
+      - INTERACTSH_TOKEN=${INTERACTSH_TOKEN:-}
+      - PENTEST_DB_PATH=/data/pentest/findings.db
+      - HOOKS_TOKEN=${HOOKS_TOKEN:-hooks-secret}
+      - REPORTS_DIR=/app/reports
+    networks:
+      - pentester-net
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:3001/"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+      start_period: 180s   # tiempo para que tsdown compile antes del primer check
+
+  # ── Agente Explorador (Reconocimiento) ───────────────────
+  # Espera a que supervisor esté healthy para no competir por RAM durante el build.
+  explorer:
+    <<: *agent-base
+    container_name: agent-explorer
+    ports:
+      - "3002:3002"
+    volumes:
+      - openclaw-state-explorer:/root/.openclaw
+      - ./pentester/agents/explorer:/root/.openclaw/workspace
+      - ./pentester/skills:/app/pentester/skills
+      - ./pentester/agents:/app/pentester/agents
+      - ./pentester/config/explorer.json:/root/.openclaw/openclaw.json
+      - pentest-db:/data/pentest
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN:-pentester}
+      - ZAP_BASE_URL=http://zap:8080
+      - ZAP_API_KEY=${ZAP_API_KEY:-changeme}
+      - PENTEST_DB_PATH=/data/pentest/findings.db
+    networks:
+      - pentester-net
+    depends_on:
+      supervisor:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:3002/"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+      start_period: 180s
+
+  # ── Agente Analista de Tráfico ────────────────────────────
+  # Espera a que explorer esté healthy.
+  analyst:
+    <<: *agent-base
+    container_name: agent-analyst
+    ports:
+      - "3003:3003"
+    volumes:
+      - openclaw-state-analyst:/root/.openclaw
+      - ./pentester/agents/analyst:/root/.openclaw/workspace
+      - ./pentester/skills:/app/pentester/skills
+      - ./pentester/agents:/app/pentester/agents
+      - ./pentester/config/analyst.json:/root/.openclaw/openclaw.json
+      - pentest-db:/data/pentest
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN:-pentester}
+      - ZAP_BASE_URL=http://zap:8080
+      - ZAP_API_KEY=${ZAP_API_KEY:-changeme}
+      - PENTEST_DB_PATH=/data/pentest/findings.db
+    networks:
+      - pentester-net
+    depends_on:
+      explorer:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:3003/"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+      start_period: 180s
+
+  # ── Agente Explotador ─────────────────────────────────────
+  # Arranca último, cuando analyst ya está healthy.
+  exploiter:
+    <<: *agent-base
+    container_name: agent-exploiter
+    ports:
+      - "3004:3004"
+    volumes:
+      - openclaw-state-exploiter:/root/.openclaw
+      - ./pentester/agents/exploiter:/root/.openclaw/workspace
+      - ./pentester/skills:/app/pentester/skills
+      - ./pentester/agents:/app/pentester/agents
+      - ./pentester/config/exploiter.json:/root/.openclaw/openclaw.json
+      - pentest-db:/data/pentest
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN:-pentester}
+      - ZAP_BASE_URL=http://zap:8080
+      - ZAP_API_KEY=${ZAP_API_KEY:-changeme}
+      - INTERACTSH_SERVER=${INTERACTSH_SERVER:-https://interact.sh}
+      - INTERACTSH_TOKEN=${INTERACTSH_TOKEN:-}
+      - PENTEST_DB_PATH=/data/pentest/findings.db
+    networks:
+      - pentester-net
+    depends_on:
+      analyst:
+        condition: service_healthy
+
+  # ── OWASP ZAP daemon ──────────────────────────────────────
+  zap:
+    image: ghcr.io/zaproxy/zaproxy:stable
+    container_name: pentester-zap
+    environment:
+      # Limitar JVM. El crash a 9GB es por off-heap (threads nativos), no solo el heap.
+      - JAVA_OPTS=-Xmx512m -Xms128m -XX:MaxMetaspaceSize=256m
+    mem_limit: 3g
+    command: >
+      zap.sh -daemon
+      -host 0.0.0.0
+      -port 8080
+      -config api.addrs.addr.name=.*
+      -config api.addrs.addr.regex=true
+      -config api.key=${ZAP_API_KEY:-changeme}
+      -config proxy.ip=0.0.0.0
+      -config proxy.port=8080
+      -config ascan.threadPerHost=2
+      -config ascan.maxRuleDurationInMins=5
+      -config ascan.maxScanDurationInMins=60
+    ports:
+      - "8080:8080"     # API REST de ZAP
+      - "8090:8090"     # Proxy para tráfico HTTP
+    volumes:
+      - zap-data:/home/zap/.ZAP
+    networks:
+      - pentester-net
+    restart: unless-stopped
+
+  # ── OWASP Juice Shop (target vulnerable local) ────────────
+  # App web con vulnerabilidades reales: SQLi, XSS, IDOR, JWT, etc.
+  # Acceso desde host: http://localhost:3005
+  # Acceso desde red Docker: http://juiceshop:3000
+  juiceshop:
+    image: bkimminich/juice-shop:latest
+    container_name: pentester-juiceshop
+    ports:
+      - "3005:3000"
+    networks:
+      - pentester-net
+    restart: unless-stopped
+
+  # ── interactsh (OOB callbacks) ────────────────────────────
+  # DESACTIVADO en local: requiere dominio público para DNS callbacks.
+  # El skill generate_oob_payload usa interact.sh (servidor público) por defecto.
+  # Descomentar solo si tienes dominio propio con NS delegation.
+  #
+  # interactsh:
+  #   image: projectdiscovery/interactsh-server:latest
+  #   container_name: pentester-interactsh
+  #   command: ["-domain", "tu-dominio.com", "-ip", "tu-ip-publica"]
+  #   ports:
+  #     - "8443:8443"
+  #     - "8091:8091"
+  #   networks:
+  #     - pentester-net
+  #   restart: unless-stopped
+
+volumes:
+  zap-data:
+    name: pentester-zap-data
+  # Volumen compartido para ChromaDB — todos los agentes leen y escriben aquí
+  pentest-db:
+    name: openclaw-pentester-db
+  # Un volumen de estado por agente (pairings, parámetros OpenClaw propios del agente)
+  openclaw-state:
+    name: openclaw-pentester-state-supervisor
+  openclaw-state-explorer:
+    name: openclaw-pentester-state-explorer
+  openclaw-state-analyst:
+    name: openclaw-pentester-state-analyst
+  openclaw-state-exploiter:
+    name: openclaw-pentester-state-exploiter
+
+networks:
+  pentester-net:
+    name: pentester-net
+    driver: bridge

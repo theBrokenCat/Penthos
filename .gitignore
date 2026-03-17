@@ -1,0 +1,23 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Third-party code
+openclaw-src/
+node_modules/
+pentester/mcp/node_modules/
+pentester/mcp/dist/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.venv/
+venv/
+env/
+
+# Project specific
+reports/
+pentester/docker/data/
