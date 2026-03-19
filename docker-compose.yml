@@ -45,7 +45,7 @@ x-agent-base: &agent-base
     - pentester-net
   depends_on:
     zap:
-      condition: service_started
+      condition: service_healthy
   restart: unless-stopped
 
 services:
@@ -86,6 +86,8 @@ services:
     depends_on:
       supervisor:
         condition: service_healthy
+      zap:
+        condition: service_healthy
     healthcheck:
       test: [ "CMD", "curl", "-sf", "http://localhost:3002/" ]
       interval: 20s
@@ -107,6 +109,8 @@ services:
       - pentest-db:/data/pentest
     depends_on:
       explorer:
+        condition: service_healthy
+      zap:
         condition: service_healthy
     healthcheck:
       test: [ "CMD", "curl", "-sf", "http://localhost:3003/" ]
@@ -130,6 +134,8 @@ services:
     depends_on:
       analyst:
         condition: service_healthy
+      zap:
+        condition: service_healthy
 
   zap:
     image: ghcr.io/zaproxy/zaproxy:stable
@@ -146,6 +152,12 @@ services:
     networks:
       - pentester-net
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/JSON/core/view/version/?apikey=${ZAP_API_KEY:-changeme}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   juiceshop:
     image: bkimminich/juice-shop:latest
