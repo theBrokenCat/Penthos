@@ -14,12 +14,13 @@ Plataforma de pentesting web autónoma sobre **OpenClaw**. Cuatro agentes colabo
 
 | Campo | Valor |
 |---|---|
-| **Fase activa** | 5 — Validación con PortSwigger Labs (en progreso) |
-| **Última sesión** | 2026-03-17 |
+| **Fase activa** | 5 — Validación con PortSwigger Labs (en progreso) + Fase 6 Portal Web ✅ |
+| **Última sesión** | 2026-03-18 |
 | **Proveedor LLM** | ☁️ **Anthropic API** |
 | **Modelo activo** | `claude-haiku-4-5-20251001` (todos los agentes) |
+| **Portal web** | Next.js 15 en `webapp/` — puerto 4000 — admin: salvadormayorarturo@gmail.com |
 | **Alternativas** | ollama=`ollama/qwen3.5:9b` (ver `PROJECT/changes/models.md`) \| gemini=`google/gemini-2.0-flash` |
-| **Próximo paso** | Lab: "Finding and exploiting an unused API endpoint" (PATCH precio → comprar Leather Jacket) |
+| **Próximo paso** | Lab: "Finding and exploiting an unused API endpoint" (PATCH precio → comprar Leather Jacket) — Portal web: `cd webapp/src && npx next dev -p 4000` |
 
 Ver detalle completo en `PROJECT/PROGRESS.md`.
 

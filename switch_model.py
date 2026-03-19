@@ -16,12 +16,12 @@ from pathlib import Path
 MODELS = {
     "1": {
         "label":   "Anthropic — Claude Haiku 4.5 (rápido, económico)",
-        "model":   "claude-haiku-4-5-20251001",
+        "model":   "anthropic/claude-haiku-4-5-20251001",
         "env_key": "ANTHROPIC_API_KEY",
     },
     "2": {
         "label":   "Anthropic — Claude Sonnet 4.5 (más capaz, más caro)",
-        "model":   "claude-sonnet-4-5",
+        "model":   "anthropic/claude-sonnet-4-5",
         "env_key": "ANTHROPIC_API_KEY",
     },
     "3": {

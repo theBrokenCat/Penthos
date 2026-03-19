@@ -83,13 +83,13 @@
 - [x] Volumen compartido `pentest-db` — todos los agentes leen/escriben mismo ChromaDB
 - [x] Startup secuencial con healthcheck chain (supervisor → explorer → analyst → exploiter) — fix OOM crash loop
 
-**MCP Server ZAP↔OpenClaw:**
-- [x] `pentester/mcp/src/index.ts` — MCP server TypeScript con 10 herramientas ZAP nativas
-  - zap_spider_start/status/results, zap_active_scan_start/status, zap_get_alerts
-  - zap_get_messages/message, zap_send_request, zap_status
-- [x] `pentester/mcp/package.json` + `tsconfig.json` — proyecto TypeScript compilable
-- [ ] Compilar MCP server (`docker-compose up --build`) — `dist/` pendiente de generar
-- [ ] Re-habilitar `mcpServers` en analyst.json y exploiter.json tras `--build`
+**MCP Server ZAP↔OpenClaw — DESCARTADO (2026-03-19):**
+- [x] `pentester/mcp/src/index.ts` — MCP server TypeScript con 10 herramientas ZAP (código conservado)
+- ❌ MCP via acpx NO compatible con modelos cloud (Anthropic API / Gemini) — usan ACP bridge mode
+- ✅ **Decisión arquitectural definitiva**: Anthropic API + skills+scripts Python (patrón nativo OpenClaw)
+- ✅ ZAP se integra directamente desde los scripts Python de cada skill (sin capa MCP)
+- ✅ `ACPX_PINNED_VERSION` corregido de `0.1.16` → `0.2.0` en `openclaw-src/extensions/acpx/src/config.ts`
+- ✅ `mcpServers` eliminado de todos los configs (supervisor/explorer/analyst/exploiter.json)
 
 **Tests de integración (Juice Shop http://juiceshop:3000):**
 - [x] Explorer ejecutó recon completo: 8 findings almacenados en ChromaDB compartido
@@ -146,10 +146,46 @@
 - [ ] Lab: Authentication bypass
 - [ ] Lab: IDOR
 
-### Fase 6 — Reporter y Producto Final 🔴 Pendiente
-- [ ] Agente Reporter con template profesional
-- [ ] Portal / interfaz para clientes
+### Fase 6 — Portal Web de Gestión ✅ COMPLETADA (2026-03-18)
+
+**Portal Next.js 15 en `webapp/` corriendo en puerto 4000.**
+
+**Stack del portal:**
+- Next.js 15 (App Router, TypeScript, SSR + Client Components)
+- SQLite + Drizzle ORM (5 tablas: users, audits, reports, hitl_reviews, audit_log)
+- Auth.js v5 (Credentials, JWT httpOnly, RBAC: admin/analyst/viewer)
+- shadcn/ui + Tailwind CSS (dark mode, zinc/slate palette)
+- Server-Sent Events para monitoreo de agentes en tiempo real
+- SWR para data fetching con auto-revalidación
+- recharts para gráficas de findings
+- python-docx para generación de informes Word (.docx)
+
+**Módulos implementados:**
+- [x] Auth & DB (login, setup primer admin, middleware, Drizzle schema)
+- [x] Layout & Design System (sidebar, topbar, componentes UI reutilizables)
+- [x] Dashboard (stats en tiempo real, gráfica 14 días, feed de actividad, resumen agentes)
+- [x] Gestión de Auditorías (lista filtrable, wizard de creación, detalle con 5 tabs)
+- [x] Panel de Findings (lista filtrable por severidad, detalle con evidencias, acciones)
+- [x] Generación de Informes Word (modal config, python-docx, descarga .docx)
+- [x] Monitor de Agentes (SSE tiempo real, 4 cards, logs drawer, métricas del sistema)
+- [x] Settings (perfil, contraseña, API keys, apariencia, admin: usuarios, audit log)
+
+**Rutas principales:**
+- `/setup` — crear primer admin (sin auth requerida)
+- `/login` — autenticación
+- `/` — dashboard
+- `/audits` — lista de auditorías
+- `/audits/[id]` — detalle de auditoría
+- `/agents` — monitor en tiempo real
+- `/settings` — configuración de usuario y admin
+
+**Fix aplicado en esta sesión:**
+- Eliminado directorio `\(dashboard\)` con backslashes literales (artefacto de shell escaping)
+- Movida ruta `/api/hitl/[auditId]` → `/api/hitl/audit/[auditId]` para resolver conflicto de nombres en Next.js 15 Turbopack
+
+### Fase 7 — Modelo de Negocio / Producto Final 🔴 Pendiente
 - [ ] Modelo de negocio definido
+- [ ] Integración portal en docker-compose.yml principal como servicio
 
 ---
 
@@ -249,6 +285,35 @@
 - Recrear contenedores con nueva config: `docker-compose up -d --force-recreate`
 - Resolver lab "Finding and exploiting an unused API endpoint"
 - Compilar MCP server (`docker-compose up --build`)
+
+### 2026-03-18 — Sesión 8
+**Logros:**
+- Portal web de gestión completo implementado en `webapp/` (Next.js 15, puerto 4000)
+- 9 módulos desarrollados por agentes especializados (AGENT_1 a AGENT_9)
+- Auth.js v5 + SQLite + Drizzle ORM + RBAC funcional
+- Dashboard con SSE tiempo real + gráficas + feed de actividad
+- Gestión completa de auditorías (CRUD, filtros, paginación, wizard de creación)
+- Panel de findings con integración ChromaDB (graceful fallback si offline)
+- Generación de informes Word con python-docx
+- Monitor de agentes en tiempo real vía Server-Sent Events
+- Settings completo: perfil, contraseña, API keys, apariencia, sección admin
+- First admin creado: salvadormayorarturo@gmail.com / Admin1234!
+- Fix: eliminado `\(dashboard\)` con backslashes + resuelto conflicto de rutas hitl
+
+**Pendiente al cierre:**
+- Continuar Fase 5: lab "Finding and exploiting an unused API endpoint"
+
+### 2026-03-19 — Sesión 9
+**Logros:**
+- Diagnóstico y cierre definitivo del problema MCP + ZAP logs:
+  - Root cause: `ACPX_PINNED_VERSION = "0.1.16"` causaba downgrade del binary → schema 0.1.16 sin `mcpServers` → validación fallaba silenciosamente
+  - Fix parcial: actualizado a `"0.2.0"` en `openclaw-src/extensions/acpx/src/config.ts`
+  - Root cause definitivo: para modelos Anthropic/Gemini API OpenClaw usa **ACP bridge mode**, que rechaza explícitamente per-session MCP servers (`translator.ts:1065` — "does not support per-session MCP servers")
+  - **Decisión arquitectural**: MCP via acpx solo funciona con modelos subprocess (Ollama). Para cloud APIs, el patrón correcto es skills+scripts Python (nativo OpenClaw)
+- Limpieza de config: eliminado `mcpServers` de los 4 agentes (supervisor/explorer/analyst/exploiter)
+- Logs verbosos añadidos en sesión anterior siguen operativos en scripts Python
+
+**Próxima sesión:** Continuar lab "Finding and exploiting an unused API endpoint" (PATCH precio → comprar Leather Jacket)
 
 ### 2026-03-16 — Sesión 6
 **Logros:**
