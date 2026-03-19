@@ -33,8 +33,8 @@ x-agent-base: &agent-base
     - INTERACTSH_TOKEN=${INTERACTSH_TOKEN:-}
     - PENTEST_DB_PATH=/data/pentest/findings.db
     - REPORTS_DIR=/app/reports
-  extra_hosts:
-    - "host.docker.internal:host-gateway"
+  #extra_hosts:
+  #  - "host.docker.internal:host-gateway"
   volumes:
     - ./pentester/skills:/app/pentester/skills
     - ./pentester/agents:/app/pentester/agents
@@ -65,7 +65,7 @@ services:
       - ./reports:/app/reports
       - ./tests:/app/tests
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:3001/"]
+      test: [ "CMD", "curl", "-sf", "http://localhost:3001/" ]
       interval: 20s
       timeout: 10s
       retries: 10
@@ -87,7 +87,7 @@ services:
       supervisor:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:3002/"]
+      test: [ "CMD", "curl", "-sf", "http://localhost:3002/" ]
       interval: 20s
       timeout: 10s
       retries: 10
@@ -109,7 +109,7 @@ services:
       explorer:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:3003/"]
+      test: [ "CMD", "curl", "-sf", "http://localhost:3003/" ]
       interval: 20s
       timeout: 10s
       retries: 10
@@ -138,14 +138,7 @@ services:
       - JAVA_OPTS=-Xmx512m -Xms128m -XX:MaxMetaspaceSize=256m
     mem_limit: 3g
     command: >
-      zap.sh -daemon
-      -host 0.0.0.0
-      -port 8080
-      -config api.addrs.addr.name=.*
-      -config api.addrs.addr.regex=true
-      -config api.key=${ZAP_API_KEY:-changeme}
-      -config proxy.ip=0.0.0.0
-      -config proxy.port=8080
+      zap.sh -daemon -host 0.0.0.0 -port 8080 -config api.addrs.addr.name=.* -config api.addrs.addr.regex=true -config api.key=${ZAP_API_KEY:-changeme} -config proxy.ip=0.0.0.0 -config proxy.port=8080
     ports:
       - "8080:8080"
     volumes:
